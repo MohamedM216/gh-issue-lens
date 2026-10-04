@@ -1,10 +1,17 @@
-# Find First Issue
+# Find Your First Issue
 
-A lightning-fast CLI tool that queries the GitHub GraphQL API to find open issues in any repository. It bypasses API rate limits by grabbing issues, linked Pull Requests, assignees, and non-bot comments in a single network pass. 
+A lightning-fast CLI tool that queries the GitHub GraphQL API to find open issues in any repository for quick analysis or LLM processing. It bypasses API rate limits by grabbing issues, linked Pull Requests, assignees, and non-bot comments in a single network pass.
 
-## Setup
+## How to use it?
+
+**Clone the repo:**
+
+```bash
+git clone https://github.com/MohamedM216/gh-issues-filter-tool.git
+```
 
 **Install requirements:**
+
 ```bash
 pip3 install requests
 ```
@@ -40,3 +47,18 @@ If you want to use a custom name for the output file, you can run:
 ```bash
 python3 find_issues.py kubernetes kubernetes -l "feature" -d 10 -o custom_dataset.json
 ```
+## What's next?
+
+The generated JSON file is suitable to be used as context for Large Language Models (like Gemini, Claude, or ChatGPT). You can upload the output file to an LLM and use targeted prompts to find the perfect issue to work on.
+
+**Example Prompts to try:**
+
+> "I am a newcomer to this repository. Based on the attached JSON, find an issue that is easy to implement, has no active PRs, and doesn't have a long, debated comment history."
+
+> "Filter these issues and list only the ones related to [backend / frontend / database / specific component]."
+
+> "Read the comments on these issues. Which maintainers seem the most responsive and welcoming to beginners? Point me to issues authored or reviewed by them."
+
+> "Summarize the technical requirements for issue #123 based on its description and comment thread. What files should I look at first?"
+
+*Happy hacking!*
