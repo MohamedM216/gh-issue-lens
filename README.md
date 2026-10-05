@@ -1,6 +1,6 @@
-# Find Your First Issue
+# Easier open source contribution process for newcomers
 
-A lightning-fast CLI tool that queries the GitHub GraphQL API to find open issues in any repository for quick analysis or LLM processing. It bypasses API rate limits by grabbing issues, linked Pull Requests, assignees, and non-bot comments in a single network pass.
+Stop digging through stale GitHub issues. **gh-issue-lens** finds unassigned, beginner-friendly open source issues in any repository and prepares them for LLM analysis in seconds. It bypasses API rate limits by grabbing issues, linked Pull Requests, assignees, and non-bot comments in a single network pass.
 
 ## How to use it?
 
