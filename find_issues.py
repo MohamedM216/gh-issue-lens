@@ -13,7 +13,7 @@ def get_graphql_query():
     return """
     query($owner: String!, $repo: String!, $cursor: String) {
       repository(owner: $owner, name: $repo) {
-        issues(first: 100, after: $cursor, states: OPEN, orderBy: {field: CREATED_AT, direction: DESC}) {
+        issues(first: 20, after: $cursor, states: OPEN, orderBy: {field: CREATED_AT, direction: DESC}) {
           pageInfo {
             hasNextPage
             endCursor
@@ -24,17 +24,17 @@ def get_graphql_query():
             url
             createdAt
             body
-            labels(first: 10) {
+            labels(first: 5) {
               nodes {
                 name
               }
             }
-            assignees(first: 10) {
+            assignees(first: 2) {
               nodes {
                 login
               }
             }
-            comments(first: 50) {
+            comments(first: 20) {
               nodes {
                 author {
                   login
@@ -43,7 +43,7 @@ def get_graphql_query():
                 body
               }
             }
-            timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 20) {
+            timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 5) {
               nodes {
                 ... on CrossReferencedEvent {
                   source {
