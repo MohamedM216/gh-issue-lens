@@ -47,6 +47,13 @@ If you want to use a custom name for the output file, you can run:
 ```bash
 python3 find_issues.py kubernetes kubernetes -l "feature" -d 10 -o custom_dataset.json
 ```
+
+**Incremental Saving & Resumability (Checkpointing):**
+
+When scraping massive repositories (like Kubernetes), hitting GitHub's API rate limits or network timeouts is common. You no longer have to worry about losing your progress!
+* **JSONL Format:** Issues are now saved line-by-line instantly as they are fetched, ensuring zero data loss.
+* **Auto-Resume:** The tool creates a hidden `.checkpoint` file tracking your progress. If the script crashes or you stop it, simply run the **exact same command** again. It will automatically resume from the exact page it left off, saving your API budget and time.
+
 ## What's next?
 
 The generated JSON file is suitable to be used as context for Large Language Models (like Gemini, Claude, or ChatGPT). You can upload the output file to an LLM and use targeted prompts to find the perfect issue to work on.
