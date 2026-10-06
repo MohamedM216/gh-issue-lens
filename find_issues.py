@@ -43,7 +43,7 @@ def get_graphql_query():
                 body
               }
             }
-            timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 5) {
+            timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 10) {
               nodes {
                 ... on CrossReferencedEvent {
                   source {
@@ -61,7 +61,7 @@ def get_graphql_query():
     }
     """
 
-def fetch_issues(owner, repo, labels, depth, token, output_filename):
+def fetch_issues(owner, repo, labels, depth, token, output_filename, exclude_open_prs=False):
     url = "https://api.github.com/graphql"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -101,7 +101,7 @@ def fetch_issues(owner, repo, labels, depth, token, output_filename):
             "cursor": cursor
         }
 
-        print(f" -> Scanning page {page_num} (Fetching up to 100 open issues from GitHub)...")
+        print(f" -> Scanning page {page_num} (Fetching up to 20 open issues from GitHub)...")
         
         response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
         if response.status_code != 200:
@@ -156,6 +156,9 @@ def fetch_issues(owner, repo, labels, depth, token, output_filename):
                 if source and source.get("state") == "OPEN":
                     has_open_pr = True
                     break
+
+            if exclude_open_prs and has_open_pr:
+            	continue
                     
             page_issues.append({
                 "number": issue.get("number"),
@@ -208,6 +211,7 @@ def main():
     parser.add_argument("-l", "--labels", nargs="+", help="Filter by up to 5 labels. Labels are ORed (e.g., -l 'bug' 'good first issue')", default=[])
     parser.add_argument("-d", "--depth", type=int, help="Maximum number of issues to fetch (default: 100)", default=100)
     parser.add_argument("-o", "--output", help="Output JSONL filename", default=None)
+    parser.add_argument("--exclude-open-prs", action="store_true", help="Skip issues that already have an open pull request against them.")
     args = parser.parse_args()
 
     if len(args.labels) > 5:
@@ -230,7 +234,7 @@ def main():
         open(output_filename, "w").close()
 
     try:
-        total_fetched = fetch_issues(args.owner, args.repo, args.labels, args.depth, token, output_filename)
+        total_fetched = fetch_issues(args.owner, args.repo, args.labels, args.depth, token, output_filename, args.exclude_open_prs)
         print(f"\nDone! Scraped {total_fetched} issues in this run.")
         print(f"Data saved to {output_filename} (JSONL format)")
     except KeyboardInterrupt:

@@ -24,6 +24,12 @@ First of all, create your personal github token from your github account then us
 export GITHUB_TOKEN="your_personal_access_token"
 ```
 
+**Verify it works:**
+
+```bash
+python3 find_issues.py --help
+```
+
 **Fetch 100 issues from a repository:**
 
 100 issues is the default depth you can change it using the -d option.
@@ -53,6 +59,12 @@ python3 find_issues.py kubernetes kubernetes -l "feature" -d 10 -o custom_datase
 When scraping massive repositories (like Kubernetes), hitting GitHub's API rate limits or network timeouts is common. You no longer have to worry about losing your progress!
 * **JSONL Format:** Issues are now saved line-by-line instantly as they are fetched, ensuring zero data loss.
 * **Auto-Resume:** The tool creates a hidden `.checkpoint` file tracking your progress. If the script crashes or you stop it, simply run the **exact same command** again. It will automatically resume from the exact page it left off, saving your API budget and time.
+
+**Exclude issues with open PRs:**
+
+```bash
+python3 find_issues.py kubernetes kubernetes --exclude-open-prs
+```
 
 ## What's next?
 
