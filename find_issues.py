@@ -1,8 +1,75 @@
 import argparse
 import requests
+import sqlite3
 import json
 import os
 import sys
+from datetime import datetime, timezone
+
+DEFAULT_CACHE_DB = ".gh_issue_lens_cache.db"
+
+
+def init_cache(cache_db):
+    conn = sqlite3.connect(cache_db)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cached_issues (
+            repo TEXT NOT NULL,
+            issue_number INTEGER NOT NULL,
+            url TEXT,
+            cached_at TEXT NOT NULL,
+            PRIMARY KEY (repo, issue_number)
+        )
+    """)
+
+    conn.commit()
+    return conn
+
+
+def is_issue_cached(conn, repo_full_name, issue_number):
+    cur = conn.execute(
+        """
+        SELECT 1
+        FROM cached_issues
+        WHERE repo = ? AND issue_number = ?
+        LIMIT 1
+        """,
+        (repo_full_name.lower(), issue_number)
+    )
+
+    return cur.fetchone() is not None
+
+
+def cache_issues(conn, repo_full_name, issues):
+    if not issues:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    rows = [
+        (
+            repo_full_name.lower(),
+            issue["number"],
+            issue.get("url"),
+            now
+        )
+        for issue in issues
+    ]
+
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO cached_issues (
+            repo,
+            issue_number,
+            url,
+            cached_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        rows
+    )
+
+    conn.commit()
 
 def get_graphql_query():
     """
@@ -61,7 +128,7 @@ def get_graphql_query():
     }
     """
 
-def fetch_issues(owner, repo, labels, depth, token, output_filename, exclude_open_prs=False):
+def fetch_issues(owner, repo, labels, depth, token, output_filename, exclude_open_prs=False, use_cache=False, cache_db=DEFAULT_CACHE_DB, cache_stop=False):
     url = "https://api.github.com/graphql"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -79,6 +146,11 @@ def fetch_issues(owner, repo, labels, depth, token, output_filename, exclude_ope
     # Define the hidden checkpoint file
     checkpoint_file = f".checkpoint_{owner}_{repo}.json"
 
+    conn = init_cache(cache_db) if use_cache else None
+    repo_key = f"{owner}/{repo}".lower()
+    cached_skipped = 0
+    no_new_pages = 0
+
     if os.path.exists(checkpoint_file):
         try:
             with open(checkpoint_file, "r") as f:
@@ -94,114 +166,166 @@ def fetch_issues(owner, repo, labels, depth, token, output_filename, exclude_ope
     print(f"Starting extraction for {owner}/{repo}{label_text}...")
     print(f"Target depth: {depth} matches.")
     
-    while has_next_page and extracted_count < depth:
-        variables = {
-            "owner": owner,
-            "repo": repo,
-            "cursor": cursor
-        }
+    try:
+        while has_next_page and extracted_count < depth:
+            variables = {
+                "owner": owner,
+                "repo": repo,
+                "cursor": cursor
+            }
 
-        print(f" -> Scanning page {page_num} (Fetching up to 20 open issues from GitHub)...")
-        
-        response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
-        if response.status_code != 200:
-            print(f"Error {response.status_code}: {response.text}")
-            print("Progress saved to checkpoint. Run the script again to resume.")
-            sys.exit(1)
+            print(f" -> Scanning page {page_num} (Fetching up to 20 open issues from GitHub)...")
             
-        data = response.json()
-        if "errors" in data:
-            print(f"GraphQL Error: {data['errors'][0]['message']}")
-            print("Progress saved to checkpoint. Run the script again to resume.")
-            sys.exit(1)
+            response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
+            if response.status_code != 200:
+                print(f"Error {response.status_code}: {response.text}")
+                print("Progress saved to checkpoint. Run the script again to resume.")
+                sys.exit(1)
+                
+            data = response.json()
+            if "errors" in data:
+                print(f"GraphQL Error: {data['errors'][0]['message']}")
+                print("Progress saved to checkpoint. Run the script again to resume.")
+                sys.exit(1)
+                
+            repository = data.get("data", {}).get("repository")
+            if not repository:
+                print(f"Repository {owner}/{repo} not found.")
+                sys.exit(1)
+                
+            issues_data = repository.get("issues", {})
+            nodes = issues_data.get("nodes", [])
             
-        repository = data.get("data", {}).get("repository")
-        if not repository:
-            print(f"Repository {owner}/{repo} not found.")
-            sys.exit(1)
-            
-        issues_data = repository.get("issues", {})
-        nodes = issues_data.get("nodes", [])
-        
-        page_issues = []
-        for issue in nodes:
-            if not issue: continue
-            
-            # 1. Evaluate Labels (OR condition implemented locally)
-            issue_labels = [l["name"].lower() for l in issue.get("labels", {}).get("nodes", []) if l]
-            if has_labels:
-                # Skip this issue entirely if it doesn't contain ANY of our target labels
-                if not any(label in issue_labels for label in target_labels_lower):
+            page_issues = []
+            eligible_before_cache = 0
+
+            for issue in nodes:
+                if not issue:
                     continue
-                    
-            # 2. Parse Assignees
-            assignees = [a["login"] for a in issue.get("assignees", {}).get("nodes", []) if a]
-            
-            # 3. Parse Comments (Filtering out Bots)
-            comments = []
-            for comment in issue.get("comments", {}).get("nodes", []):
-                if not comment: continue
-                author = comment.get("author")
-                if author and author.get("__typename") != "Bot":
-                    comments.append({
-                        "author": author.get("login"),
-                        "body": comment.get("body")
-                    })
-                    
-            # 4. Check for open Pull Requests mentioning this issue
-            has_open_pr = False
-            for event in issue.get("timelineItems", {}).get("nodes", []):
-                if not event: continue
-                source = event.get("source")
-                if source and source.get("state") == "OPEN":
-                    has_open_pr = True
+
+                # 1. Evaluate Labels (OR condition implemented locally)
+                issue_labels = [
+                    l["name"].lower()
+                    for l in issue.get("labels", {}).get("nodes", [])
+                    if l
+                ]
+
+                if has_labels:
+                    # Skip this issue entirely if it doesn't contain ANY of our target labels
+                    if not any(label in issue_labels for label in target_labels_lower):
+                        continue
+
+                # 2. Parse Assignees
+                assignees = [
+                    a["login"]
+                    for a in issue.get("assignees", {}).get("nodes", [])
+                    if a
+                ]
+
+                # 3. Parse Comments (Filtering out Bots)
+                comments = []
+
+                for comment in issue.get("comments", {}).get("nodes", []):
+                    if not comment:
+                        continue
+
+                    author = comment.get("author")
+
+                    if author and author.get("__typename") != "Bot":
+                        comments.append({
+                            "author": author.get("login"),
+                            "body": comment.get("body")
+                        })
+
+                # 4. Check for open Pull Requests mentioning this issue
+                has_open_pr = False
+
+                for event in issue.get("timelineItems", {}).get("nodes", []):
+                    if not event:
+                        continue
+
+                    source = event.get("source")
+
+                    if source and source.get("state") == "OPEN":
+                        has_open_pr = True
+                        break
+
+                if exclude_open_prs and has_open_pr:
+                    continue
+
+                eligible_before_cache += 1
+
+                # 5. SQLite cache check
+                if conn is not None and is_issue_cached(conn, repo_key, issue.get("number")):
+                    cached_skipped += 1
+                    continue
+
+                page_issues.append({
+                    "number": issue.get("number"),
+                    "title": issue.get("title"),
+                    "url": issue.get("url"),
+                    "created_at": issue.get("createdAt"),
+                    "is_assigned": len(assignees) > 0,
+                    "assigned_to": assignees,
+                    "has_open_pr_against_it": has_open_pr,
+                    "labels": issue_labels,
+                    "body": issue.get("body"),
+                    "comments": comments
+                })
+
+                # Stop parsing if we hit the depth target mid-page
+                if extracted_count + len(page_issues) >= depth:
                     break
 
-            if exclude_open_prs and has_open_pr:
-            	continue
+            # Write the fully parsed page to the file all at once
+            with open(output_filename, "a", encoding="utf-8") as f:
+                for item in page_issues:
+                    f.write(json.dumps(item) + "\n")
+
+            if conn is not None and page_issues:
+                cache_issues(conn, repo_key, page_issues)
                     
-            page_issues.append({
-                "number": issue.get("number"),
-                "title": issue.get("title"),
-                "url": issue.get("url"),
-                "created_at": issue.get("createdAt"),
-                "is_assigned": len(assignees) > 0,
-                "assigned_to": assignees,
-                "has_open_pr_against_it": has_open_pr,
-                "labels": issue_labels, 
-                "body": issue.get("body"),
-                "comments": comments
-            })
+            extracted_count += len(page_issues)
             
-            # Stop parsing if we hit the depth target mid-page
-            if extracted_count + len(page_issues) >= depth:
+            page_info = issues_data.get("pageInfo", {})
+            has_next_page = page_info.get("hasNextPage", False)
+            cursor = page_info.get("endCursor")
+            page_num += 1
+            
+            cache_should_stop = False
+            if conn is not None and cache_stop:
+                if eligible_before_cache > 0 and len(page_issues) == 0:
+                    no_new_pages += 1
+
+                    if no_new_pages >= 3:
+                        cache_should_stop = True
+                else:
+                    no_new_pages = 0
+
+            if has_next_page and extracted_count < depth and not cache_should_stop:
+                # Save state for the NEXT iteration
+                with open(checkpoint_file, "w") as f:
+                    json.dump({
+                        "cursor": cursor, 
+                        "page_num": page_num, 
+                        "extracted_count": extracted_count
+                    }, f)
+            else:
+                # Finished or reached depth, clean up checkpoint
+                if os.path.exists(checkpoint_file):
+                    os.remove(checkpoint_file)
+            
+            if cache_should_stop:
+                print("Stopping early: 3 consecutive pages contained only cached eligible issues.")
                 break
 
-        # Write the fully parsed page to the file all at once
-        with open(output_filename, "a", encoding="utf-8") as f:
-            for item in page_issues:
-                f.write(json.dumps(item) + "\n")
-                
-        extracted_count += len(page_issues)
-        
-        page_info = issues_data.get("pageInfo", {})
-        has_next_page = page_info.get("hasNextPage", False)
-        cursor = page_info.get("endCursor")
-        page_num += 1
-        
-        if has_next_page and extracted_count < depth:
-            # Save state for the NEXT iteration
-            with open(checkpoint_file, "w") as f:
-                json.dump({
-                    "cursor": cursor, 
-                    "page_num": page_num, 
-                    "extracted_count": extracted_count
-                }, f)
-        else:
-            # Finished or reached depth, clean up checkpoint
-            if os.path.exists(checkpoint_file):
-                os.remove(checkpoint_file)
-                
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if use_cache:
+        print(f"Cached issues skipped: {cached_skipped}")
+
     return extracted_count
 
 def main():
@@ -212,6 +336,9 @@ def main():
     parser.add_argument("-d", "--depth", type=int, help="Maximum number of issues to fetch (default: 100)", default=100)
     parser.add_argument("-o", "--output", help="Output JSONL filename", default=None)
     parser.add_argument("--exclude-open-prs", action="store_true", help="Skip issues that already have an open pull request against them.")
+    parser.add_argument("--cache", action="store_true", help="Enable SQLite caching to avoid exporting issues seen in previous runs.")
+    parser.add_argument("--cache-db", default=DEFAULT_CACHE_DB, help=f"Path to SQLite cache file. Default: {DEFAULT_CACHE_DB}")
+    parser.add_argument("--cache-stop", action="store_true", help="Stop early when multiple consecutive pages contain only cached eligible issues.")
     args = parser.parse_args()
 
     if len(args.labels) > 5:
@@ -229,12 +356,14 @@ def main():
     output_filename = args.output if args.output else f"{args.repo}_issues.jsonl"
     checkpoint_file = f".checkpoint_{args.owner}_{args.repo}.json"
     
-    # If no checkpoint exists, this is a fresh run. Clear the output file to avoid appending to old data.
-    if not os.path.exists(checkpoint_file):
+    # If no checkpoint exists, this is a fresh run.
+    # Without cache, clear the output file to avoid appending to old data.
+    # With cache, keep the old output and append only newly discovered issues.
+    if not os.path.exists(checkpoint_file) and not args.cache:
         open(output_filename, "w").close()
 
     try:
-        total_fetched = fetch_issues(args.owner, args.repo, args.labels, args.depth, token, output_filename, args.exclude_open_prs)
+        total_fetched = fetch_issues(args.owner, args.repo, args.labels, args.depth, token, output_filename, args.exclude_open_prs, args.cache, args.cache_db, args.cache_stop)
         print(f"\nDone! Scraped {total_fetched} issues in this run.")
         print(f"Data saved to {output_filename} (JSONL format)")
     except KeyboardInterrupt:
