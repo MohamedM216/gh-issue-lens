@@ -1,6 +1,17 @@
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+    "dist",
+    "build",
+]
 
 [tool.ruff.lint]
 select = [
@@ -9,6 +20,7 @@ select = [
     "W",
     "I",
 ]
+fixable = ["ALL"]
 
 [tool.ruff.format]
 indent-style = "space"
