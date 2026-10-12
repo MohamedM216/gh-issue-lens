@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Local package/cache files
+.gh_issue_lens_cache.db
+.checkpoint_*.json
+*.jsonl
+
+# Secrets
+.pypirc
