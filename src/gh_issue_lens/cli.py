@@ -8,7 +8,18 @@ from . import __version__
 from .core import DEFAULT_CACHE_DB, fetch_issues
 
 
-def main():
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if argv and argv[0] == "stats":
+        from .stats import stats_main
+
+        return stats_main(argv[1:])
+
+    return scan_main(argv)
+
+def scan_main(argv):
     parser = argparse.ArgumentParser(
         prog="gh-issue-lens",
         description=(
@@ -93,7 +104,7 @@ def main():
         ),
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if len(args.labels) > 5:
         print("Error: You can specify a maximum of 5 labels.")

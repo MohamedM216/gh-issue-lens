@@ -110,7 +110,7 @@ Every exported issue now includes an `availability` field:
 - `no_linked_pr`: nobody has opened a PR yet
 
 ```bash
-    gh-issue-lens kubernetes kubernetes --stale-pr-days 60
+gh-issue-lens kubernetes kubernetes --stale-pr-days 60
 ```
 
 Note: `--exclude-open-prs` now skips only issues with a *fresh* open PR,
@@ -145,6 +145,32 @@ rm .gh_issue_lens_cache.db
 ```
 
 Caching is different from checkpointing: checkpointing helps resume a crashed or interrupted run, while caching helps avoid exporting the same issues again across separate runs.
+
+## Compare repositories: which community should you start with?
+
+`gh-issue-lens stats` answers the question every beginner asks first:
+*which repo should I even try?*
+
+    gh-issue-lens stats kubernetes/kubernetes pandas-dev/pandas
+
+Or from a file (one `owner/repo` per line, `#` comments allowed):
+
+    gh-issue-lens stats --repos-file repos.txt
+
+Three output layers:
+
+- **Terminal (default):** comparison table + bar chart, plus a 0-100 beginner score.
+- **HTML report:** `--html report.html` writes a self-contained page with bar charts.
+- **Raw JSON for LLMs:** `--json stats.json`, or `--json -` to print to stdout and pipe anywhere.
+
+### What the numbers mean
+
+- **VERDICT (decide in 2 seconds):** 🌱 GREAT (≥75) · 👍 GOOD (≥55) · ⚠️ MIXED (≥35) · 🧊 COLD (<35).
+- **beginner score (0-100):** responsiveness (30) + beginner-issue funnel (20) + answered-issue share (15) + freshness (15) + merged-PR pace per week (12) + push recency (8).
+- **REPLY:** median time until the first non-bot, non-author comment on the 100 most recent open issues.
+- **UNANSW / STALE:** share of those 100 issues with no human reply / untouched for `--stale-days` (default 180).
+- **PR/WK:** pull requests merged in the last 7 days (the monthly count is in the JSON and HTML report).
+- The HTML report (`--html`) adds a summary per repo: how fast people answer, how many beginner issues are open, and how active the merge pace is.
 
 ## What's next?
 
