@@ -80,6 +80,7 @@ query($owner: String!, $repo: String!, $cursor: String) {
 }
 """
 
+
 ### Helpers
 def parse_iso_datetime(value):
     """Parse a GitHub ISO-8601 timestamp into a timezone-aware datetime."""
@@ -114,25 +115,13 @@ def classify_availability(linked_prs, stale_pr_days):
     """
     open_prs = [pr for pr in linked_prs if pr["state"] == "OPEN"]
 
-    fresh_open_prs = [
-        pr for pr in open_prs
-        if days_since(pr["updated_at"]) < stale_pr_days
-    ]
+    fresh_open_prs = [pr for pr in open_prs if days_since(pr["updated_at"]) < stale_pr_days]
 
-    stale_open_prs = [
-        pr for pr in open_prs
-        if days_since(pr["updated_at"]) >= stale_pr_days
-    ]
+    stale_open_prs = [pr for pr in open_prs if days_since(pr["updated_at"]) >= stale_pr_days]
 
-    merged_prs = [
-        pr for pr in linked_prs
-        if pr["merged"] or pr["state"] == "MERGED"
-    ]
+    merged_prs = [pr for pr in linked_prs if pr["merged"] or pr["state"] == "MERGED"]
 
-    closed_unmerged_prs = [
-        pr for pr in linked_prs
-        if pr["state"] == "CLOSED" and not pr["merged"]
-    ]
+    closed_unmerged_prs = [pr for pr in linked_prs if pr["state"] == "CLOSED" and not pr["merged"]]
 
     if fresh_open_prs:
         availability = "likely_taken"

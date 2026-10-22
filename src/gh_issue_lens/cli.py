@@ -39,8 +39,7 @@ def main():
         "--labels",
         nargs="+",
         help=(
-            "Filter by up to 5 labels. Labels are ORed "
-            "(e.g., -l 'good first issue' 'help wanted')"
+            "Filter by up to 5 labels. Labels are ORed (e.g., -l 'good first issue' 'help wanted')"
         ),
         default=[],
     )
@@ -81,10 +80,7 @@ def main():
     parser.add_argument(
         "--cache-stop",
         action="store_true",
-        help=(
-            "Stop early when multiple consecutive pages contain "
-            "only cached eligible issues."
-        ),
+        help=("Stop early when multiple consecutive pages contain only cached eligible issues."),
     )
 
     parser.add_argument(
