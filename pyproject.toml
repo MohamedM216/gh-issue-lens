@@ -95,6 +95,9 @@ select = [
 ]
 fixable = ["ALL"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/gh_issue_lens/stats.py" = ["E501"]
+
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "double"
