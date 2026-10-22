@@ -19,6 +19,7 @@ def main(argv=None):
 
     return scan_main(argv)
 
+
 def scan_main(argv):
     parser = argparse.ArgumentParser(
         prog="gh-issue-lens",

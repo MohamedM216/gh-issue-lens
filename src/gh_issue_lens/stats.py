@@ -293,7 +293,9 @@ def fetch_repo_stats(repo_full_name, token, stale_days=180, now=None):
         "merged_prs_last_7_days": payload.get("mergedWeek", {}).get("issueCount", 0),
         "merged_prs_last_30_days": payload.get("mergedMonth", {}).get("issueCount", 0),
         "sample_size": sample,
-        "median_first_reply_hours": round(statistics.median(reply_hours), 1) if reply_hours else None,
+        "median_first_reply_hours": round(statistics.median(reply_hours), 1)
+        if reply_hours
+        else None,
         "unanswered_rate": round(unanswered / sample, 2) if sample else None,
         "stale_rate": round(stale / sample, 2) if sample else None,
     }
@@ -377,11 +379,17 @@ def plain_english_lines(stats, stale_days):
     if median is None:
         lines.append("Most recent issues got <b>no reply at all</b> — expect slow or no help here.")
     elif median <= 48:
-        lines.append(f"New issues usually get a first reply in about <b>{fmt_hours(median)}</b> — you won't be left alone.")
+        lines.append(
+            f"New issues usually get a first reply in about <b>{fmt_hours(median)}</b> — you won't be left alone."
+        )
     elif median <= 168:
-        lines.append(f"First replies take about <b>{fmt_hours(median)}</b> on average — reasonable, not fast.")
+        lines.append(
+            f"First replies take about <b>{fmt_hours(median)}</b> on average — reasonable, not fast."
+        )
     else:
-        lines.append(f"First replies take about <b>{fmt_hours(median)}</b> — help can be slow in this community.")
+        lines.append(
+            f"First replies take about <b>{fmt_hours(median)}</b> — help can be slow in this community."
+        )
 
     lines.append(
         f"<b>{stats['good_first_issues']}</b> 'good first issue' and "
@@ -408,7 +416,9 @@ def plain_english_lines(stats, stale_days):
     pushed_days = stats.get("pushed_days_ago")
 
     if pushed_days is not None:
-        lines.append(f"Last code push: <b>{pushed_days} day{'s' if pushed_days != 1 else ''} ago</b>.")
+        lines.append(
+            f"Last code push: <b>{pushed_days} day{'s' if pushed_days != 1 else ''} ago</b>."
+        )
 
     lines.append(
         f"<b>{fmt_rate(stats.get('unanswered_rate'))}</b> of the last {stats.get('sample_size')} issues "
@@ -422,17 +432,22 @@ def render_html(stats_list, stale_days):
     ok = [s for s in stats_list if not s.get("error")]
     errors = [s for s in stats_list if s.get("error")]
 
-    max_funnel = max(
-        [(s["good_first_issues"] + s["help_wanted_issues"]) for s in ok],
-        default=1,
-    ) or 1
+    max_funnel = (
+        max(
+            [(s["good_first_issues"] + s["help_wanted_issues"]) for s in ok],
+            default=1,
+        )
+        or 1
+    )
 
     cards = []
 
     for stats in sorted(ok, key=lambda item: -(item["beginner_score"] or 0)):
         score = stats["beginner_score"] or 0
         emoji, short, long = verdict_for_score(score)
-        css_class = {"GREAT": "great", "GOOD": "good", "MIXED": "mixed", "COLD": "cold"}.get(short, "cold")
+        css_class = {"GREAT": "great", "GOOD": "good", "MIXED": "mixed", "COLD": "cold"}.get(
+            short, "cold"
+        )
         funnel = stats["good_first_issues"] + stats["help_wanted_issues"]
         funnel_pct = round(100 * funnel / max_funnel)
 
@@ -441,15 +456,15 @@ def render_html(stats_list, stale_days):
         cards.append(
             f"""
     <div class="card">
-      <h2>{html_mod.escape(stats['repo'])} <span class="score">{score}/100</span>
+      <h2>{html_mod.escape(stats["repo"])} <span class="score">{score}/100</span>
         <span class="badge {css_class}">{emoji} {long}</span></h2>
       <div class="bar"><div class="fill {css_class}" style="width:{score}%"></div></div>
       <ul class="plain">{bullets}</ul>
       <h3>Numbers</h3>
       <ul>
-        <li>Open issues: <b>{stats['open_issues']}</b> &middot; Stars: {stats['stars']} &middot; Language: {html_mod.escape(str(stats['language']))}</li>
+        <li>Open issues: <b>{stats["open_issues"]}</b> &middot; Stars: {stats["stars"]} &middot; Language: {html_mod.escape(str(stats["language"]))}</li>
         <li>Beginner funnel vs others: <div class="bar small"><div class="fill funnel" style="width:{funnel_pct}%"></div></div></li>
-        <li>Merged PRs: <b>{stats['merged_prs_last_7_days']}</b> last 7 days &middot; <b>{stats['merged_prs_last_30_days']}</b> last 30 days</li>
+        <li>Merged PRs: <b>{stats["merged_prs_last_7_days"]}</b> last 7 days &middot; <b>{stats["merged_prs_last_30_days"]}</b> last 30 days</li>
       </ul>
     </div>"""
         )
@@ -458,8 +473,7 @@ def render_html(stats_list, stale_days):
 
     if errors:
         items = "".join(
-            f"<li>{html_mod.escape(e['repo'])}: {html_mod.escape(e['error'])}</li>"
-            for e in errors
+            f"<li>{html_mod.escape(e['repo'])}: {html_mod.escape(e['error'])}</li>" for e in errors
         )
         error_block = f"<h2>Errors</h2><ul>{items}</ul>"
 
@@ -498,7 +512,7 @@ def render_html(stats_list, stale_days):
 <body>
 <h1>gh-issue-lens &mdash; beginner-friendliness report</h1>
 <div class="meta">Generated {generated} &middot; stale threshold: {stale_days} days &middot; rates measured on the 100 most recent open issues</div>
-{''.join(cards)}
+{"".join(cards)}
 {error_block}
 </body>
 </html>
