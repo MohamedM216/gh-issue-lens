@@ -87,6 +87,16 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--stale-pr-days",
+        type=int,
+        default=90,
+        help=(
+            "Open PRs untouched for this many days are considered stale "
+            "(default: 90). Issues with only stale PRs stay available."
+        ),
+    )
+
     args = parser.parse_args()
 
     if len(args.labels) > 5:
@@ -120,6 +130,7 @@ def main():
             use_cache=args.cache,
             cache_db=args.cache_db,
             cache_stop=args.cache_stop,
+            stale_pr_days=args.stale_pr_days,
         )
 
         print(f"\nDone! Scraped {total_fetched} issues in this run.")

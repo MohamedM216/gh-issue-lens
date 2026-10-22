@@ -96,6 +96,26 @@ When scraping massive repositories (like Kubernetes), hitting GitHub's API rate 
 python3 cli.py kubernetes kubernetes --exclude-open-prs
 ```
 
+### Is this issue actually available? (Stale PR detection)
+
+An issue with a fresh open PR is probably taken. An issue whose only PR was
+abandoned months ago, or closed without merging is usually still up for grabs.
+
+Every exported issue now includes an `availability` field:
+
+- `likely_taken`: a fresh open PR exists (updated within `--stale-pr-days`)
+- `stale_pr_open`: open PRs exist but all are stale, usually still approachable
+- `merged_pr_linked`: a linked PR was merged
+- `pr_closed_unmerged`: a previous attempt failed, the issue is open again
+- `no_linked_pr`: nobody has opened a PR yet
+
+```bash
+    gh-issue-lens kubernetes kubernetes --stale-pr-days 60
+```
+
+Note: `--exclude-open-prs` now skips only issues with a *fresh* open PR,
+so abandoned-PR issues are no longer hidden from you.
+
 ### SQLite caching:
 
 `gh-issue-lens` can cache already-exported issues in a local SQLite database. This prevents duplicate issues from being written again when you run the same export multiple times.

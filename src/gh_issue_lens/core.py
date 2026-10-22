@@ -66,6 +66,9 @@ query($owner: String!, $repo: String!, $cursor: String) {
                 ... on PullRequest {
                   state
                   number
+                  createdAt
+                  updatedAt
+                  merged
                 }
               }
             }
@@ -76,6 +79,78 @@ query($owner: String!, $repo: String!, $cursor: String) {
   }
 }
 """
+
+### Helpers
+def parse_iso_datetime(value):
+    """Parse a GitHub ISO-8601 timestamp into a timezone-aware datetime."""
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def days_since(value, now=None):
+    """Whole days elapsed since an ISO timestamp. Unknown timestamps count as fresh (0)."""
+    parsed = parse_iso_datetime(value)
+
+    if parsed is None:
+        return 0
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    return max(0, (now - parsed).days)
+
+
+def classify_availability(linked_prs, stale_pr_days):
+    """
+    Classify how available an issue is for a newcomer, based on its linked PRs.
+
+    Returns:
+        (has_fresh_open_pr, has_stale_open_pr, has_closed_unmerged_pr, availability)
+    """
+    open_prs = [pr for pr in linked_prs if pr["state"] == "OPEN"]
+
+    fresh_open_prs = [
+        pr for pr in open_prs
+        if days_since(pr["updated_at"]) < stale_pr_days
+    ]
+
+    stale_open_prs = [
+        pr for pr in open_prs
+        if days_since(pr["updated_at"]) >= stale_pr_days
+    ]
+
+    merged_prs = [
+        pr for pr in linked_prs
+        if pr["merged"] or pr["state"] == "MERGED"
+    ]
+
+    closed_unmerged_prs = [
+        pr for pr in linked_prs
+        if pr["state"] == "CLOSED" and not pr["merged"]
+    ]
+
+    if fresh_open_prs:
+        availability = "likely_taken"
+    elif stale_open_prs:
+        availability = "stale_pr_open"
+    elif merged_prs:
+        availability = "merged_pr_linked"
+    elif closed_unmerged_prs:
+        availability = "pr_closed_unmerged"
+    else:
+        availability = "no_linked_pr"
+
+    return (
+        bool(fresh_open_prs),
+        bool(stale_open_prs),
+        bool(closed_unmerged_prs),
+        availability,
+    )
 
 
 def init_cache(cache_db):
@@ -157,6 +232,7 @@ def fetch_issues(
     use_cache=False,
     cache_db=DEFAULT_CACHE_DB,
     cache_stop=False,
+    stale_pr_days=90,
 ):
     """
     Fetch issues from GitHub and append them to a JSONL file.
@@ -299,19 +375,32 @@ def fetch_issues(
                             }
                         )
 
-                has_open_pr = False
-
+                linked_prs = []
                 for event in issue.get("timelineItems", {}).get("nodes", []):
                     if not event:
                         continue
 
                     source = event.get("source")
+                    if not source:
+                        continue
 
-                    if source and source.get("state") == "OPEN":
-                        has_open_pr = True
-                        break
+                    linked_prs.append(
+                        {
+                            "number": source.get("number"),
+                            "state": source.get("state"),
+                            "merged": bool(source.get("merged")),
+                            "created_at": source.get("createdAt"),
+                            "updated_at": source.get("updatedAt"),
+                        }
+                    )
 
-                if exclude_open_prs and has_open_pr:
+                has_open_pr = any(pr["state"] == "OPEN" for pr in linked_prs)
+
+                has_fresh_open_pr, has_stale_open_pr, has_closed_unmerged_pr, availability = (
+                    classify_availability(linked_prs, stale_pr_days)
+                )
+
+                if exclude_open_prs and has_fresh_open_pr:
                     continue
 
                 eligible_before_cache += 1
@@ -329,6 +418,10 @@ def fetch_issues(
                         "is_assigned": len(assignees) > 0,
                         "assigned_to": assignees,
                         "has_open_pr_against_it": has_open_pr,
+                        "has_fresh_open_pr": has_fresh_open_pr,
+                        "has_stale_open_pr": has_stale_open_pr,
+                        "availability": availability,
+                        "linked_prs": linked_prs,
                         "labels": issue_labels,
                         "body": issue.get("body"),
                         "comments": comments,
