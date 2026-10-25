@@ -2,6 +2,8 @@
 
 Stop digging through stale GitHub issues. **gh-issue-lens** finds unassigned, beginner-friendly open source issues in any repository and prepares them for LLM analysis in seconds. It bypasses API rate limits by grabbing issues, linked Pull Requests, assignees, and non-bot comments in a single network pass.
 
+If you would like to contribute to `gh-issue-lens`, which something I really appreciate, checkout [CONTRIBUTING.md](CONTRIBUTING.md).
+
 # How to use it?
 
 ## Option 1: Install from PyPI
