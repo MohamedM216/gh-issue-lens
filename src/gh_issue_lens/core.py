@@ -1,5 +1,6 @@
 """Core logic for gh-issue-lens."""
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -210,6 +211,16 @@ def cache_issues(conn, repo_full_name, issues):
     conn.commit()
 
 
+def command_signature(signature_inputs):
+    """
+    Return a stable short hash of the command options that affect
+    which issues get exported.
+
+    Used to detect when resuming would mix two different result sets.
+    """
+    payload = json.dumps(signature_inputs, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
 def fetch_issues(
     owner,
     repo,
@@ -222,6 +233,7 @@ def fetch_issues(
     cache_db=DEFAULT_CACHE_DB,
     cache_stop=False,
     stale_pr_days=90,
+    signature="",
 ):
     """
     Fetch issues from GitHub and append them to a JSONL file.
@@ -258,14 +270,28 @@ def fetch_issues(
             with open(checkpoint_file, "r", encoding="utf-8") as f:
                 cp_data = json.load(f)
 
-            cursor = cp_data.get("cursor")
-            page_num = cp_data.get("page_num", 1)
-            extracted_count = cp_data.get("extracted_count", 0)
+            if cp_data.get("signature") != signature:
+                print(
+                    "Checkpoint found, but the command options changed since "
+                    "the interrupted run."
+                )
+                print(
+                    "Discarding the old checkpoint and starting fresh to avoid "
+                    "mixing result sets."
+                )
+                os.remove(checkpoint_file)
 
-            print(
-                f"Resuming from checkpoint. Starting at page {page_num}, "
-                f"{extracted_count} issues already fetched."
-            )
+                if not use_cache:
+                    open(output_filename, "w", encoding="utf-8").close()
+            else:
+                cursor = cp_data.get("cursor")
+                page_num = cp_data.get("page_num", 1)
+                extracted_count = cp_data.get("extracted_count", 0)
+
+                print(
+                    f"Resuming from checkpoint. Starting at page {page_num}, "
+                    f"{extracted_count} issues already fetched."
+                )
         except Exception as e:
             print(f"Warning: Could not read checkpoint file: {e}")
 
@@ -452,6 +478,7 @@ def fetch_issues(
                             "cursor": cursor,
                             "page_num": page_num,
                             "extracted_count": extracted_count,
+                            "signature": signature,
                         },
                         f,
                     )

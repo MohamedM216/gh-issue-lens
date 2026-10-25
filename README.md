@@ -88,10 +88,7 @@ python3 cli.py kubernetes kubernetes -l "feature" -d 10 -o custom_dataset.json
 
 When scraping massive repositories (like Kubernetes), hitting GitHub's API rate limits or network timeouts is common. You no longer have to worry about losing your progress!
 * **JSONL Format:** Issues are now saved line-by-line instantly as they are fetched, ensuring zero data loss.
-* **Auto-Resume:** The tool creates a hidden `.checkpoint` file tracking your progress. If the script crashes or you stop it, simply run the **exact same command** again. It will automatically resume from the exact page it left off, saving your API budget and time.
-
-> [!IMPORTANT]
-> **Checkpoint behavior:** Checkpoints track pagination progress, not the command/filter configuration. Resuming with different filters may therefore produce mixed results. To start fresh, remove the `.checkpoint` file before rerunning.
+* **Auto-Resume:** The tool creates a hidden `.checkpoint` file tracking your progress. If the script crashes or you stop it, simply run the **exact same command** again. It will automatically resume from the exact page it left off, saving your API budget and time. The checkpoint stores a signature of the options that affect results (labels, depth, filters, cache mode, output file). If you re-run with different options after a crash, gh-issue-lens detects the mismatch, discards the old checkpoint and starts clean; no silently mixed result sets.
 
 ### Exclude issues with open PRs:
 

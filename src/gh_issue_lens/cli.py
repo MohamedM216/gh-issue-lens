@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import __version__
-from .core import DEFAULT_CACHE_DB, fetch_issues
+from .core import DEFAULT_CACHE_DB, command_signature, fetch_issues
 
 
 def main(argv=None):
@@ -121,6 +121,20 @@ def scan_main(argv):
     output_filename = args.output if args.output else f"{args.repo}_issues.jsonl"
     checkpoint_file = f".checkpoint_{args.owner}_{args.repo}.json"
 
+    signature = command_signature(
+        {
+            "owner": args.owner,
+            "repo": args.repo,
+            "labels": sorted(args.labels),
+            "depth": args.depth,
+            "exclude_open_prs": args.exclude_open_prs,
+            "stale_pr_days": args.stale_pr_days,
+            "cache": args.cache,
+            "cache_stop": args.cache_stop,
+            "output": output_filename,
+        }
+    )
+
     # If cache is disabled and there is no checkpoint, start with a fresh output file.
     # If cache is enabled, keep the old output file and append only new issues.
     if not os.path.exists(checkpoint_file) and not args.cache:
@@ -139,6 +153,7 @@ def scan_main(argv):
             cache_db=args.cache_db,
             cache_stop=args.cache_stop,
             stale_pr_days=args.stale_pr_days,
+            signature=signature,
         )
 
         print(f"\nDone! Scraped {total_fetched} issues in this run.")
