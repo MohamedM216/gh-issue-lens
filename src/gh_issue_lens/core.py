@@ -221,6 +221,7 @@ def command_signature(signature_inputs):
     payload = json.dumps(signature_inputs, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
+
 def fetch_issues(
     owner,
     repo,
@@ -272,12 +273,10 @@ def fetch_issues(
 
             if cp_data.get("signature") != signature:
                 print(
-                    "Checkpoint found, but the command options changed since "
-                    "the interrupted run."
+                    "Checkpoint found, but the command options changed since the interrupted run."
                 )
                 print(
-                    "Discarding the old checkpoint and starting fresh to avoid "
-                    "mixing result sets."
+                    "Discarding the old checkpoint and starting fresh to avoid mixing result sets."
                 )
                 os.remove(checkpoint_file)
 
