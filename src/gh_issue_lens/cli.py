@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import __version__
-from .core import DEFAULT_CACHE_DB, command_signature, fetch_issues
+from .core import DEFAULT_CACHE_DB, command_signature, fetch_issues, read_checkpoint, build_output_filename
 
 
 def main(argv=None):
@@ -118,22 +118,51 @@ def scan_main(argv):
         print("Please run: export GITHUB_TOKEN='your_personal_access_token'")
         sys.exit(1)
 
-    output_filename = args.output if args.output else f"{args.repo}_issues.jsonl"
     checkpoint_file = f".checkpoint_{args.owner}_{args.repo}.json"
 
-    signature = command_signature(
-        {
-            "owner": args.owner,
-            "repo": args.repo,
-            "labels": sorted(args.labels),
-            "depth": args.depth,
-            "exclude_open_prs": args.exclude_open_prs,
-            "stale_pr_days": args.stale_pr_days,
-            "cache": args.cache,
-            "cache_stop": args.cache_stop,
-            "output": output_filename,
-        }
-    )
+    signature_inputs = {
+        "owner": args.owner,
+        "repo": args.repo,
+        "labels": sorted(args.labels),
+        "depth": args.depth,
+        "exclude_open_prs": args.exclude_open_prs,
+        "stale_pr_days": args.stale_pr_days,
+        "cache": args.cache,
+        "cache_stop": args.cache_stop,
+    }
+    # An explicit -o name is part of the run identity; an auto-generated
+    # name must NOT be, otherwise every resume would look like a new command.
+    if args.output:
+        signature_inputs["output"] = args.output
+    signature = command_signature(signature_inputs)
+
+    if args.output:
+        # Explicit user-provided name: use it as-is
+        output_filename = args.output
+    else:
+        checkpoint_data = read_checkpoint(checkpoint_file)
+        if (
+            checkpoint_data
+            and checkpoint_data.get("signature") == signature
+            and checkpoint_data.get("output_filename")
+        ):
+            # Resuming an interrupted run: keep appending to its file.
+            output_filename = checkpoint_data["output_filename"]
+            print(f"Resuming previous run, appending to {output_filename}")
+        else:
+            output_filename = build_output_filename(
+                repo=args.repo,
+                labels=args.labels,
+                depth=args.depth,
+                exclude_open_prs=args.exclude_open_prs,
+                signature=signature,
+            )
+    print(f"Output file: {output_filename}")
+
+    # If cache is disabled and there is no checkpoint, start with a fresh output file.
+    # If cache is enabled, keep the old output file and append only new issues.
+    if not os.path.exists(checkpoint_file) and not args.cache:
+        open(output_filename, "w", encoding="utf-8").close()
 
     # If cache is disabled and there is no checkpoint, start with a fresh output file.
     # If cache is enabled, keep the old output file and append only new issues.

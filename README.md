@@ -86,11 +86,30 @@ If you want to use a custom name for the output file, you can run:
 python3 cli.py kubernetes kubernetes -l "feature" -d 10 -o custom_dataset.json
 ```
 
+### Auto-labeled output files:
+When you don't pass `-o`, every command gets its own file, named after the command that produced it and the time it ran:
+
+```
+{repo}_{labels}_d{depth}[_no-open-prs]_{signature}_{UTC timestamp}.jsonl
+```
+
+Example: running `-l "good first issue" "help wanted" -d 50` produces something like:
+
+```
+kubernetes_good-first-issue_help-wanted_d50_3f9a2b1c4d5e_20261028T143022Z.jsonl
+```
+
+- **Command part** (labels, depth, flags): tells you exactly which query produced the dataset.
+- **Signature**: the same 12-char hash used by checkpointing, so a resumed run always finds its file.
+- **Timestamp (UTC)**: re-running the same command later creates a new file instead of overwriting the previous export.
+
+If you prefer to manage filenames yourself, pass `-o` and the behavior stays exactly as before.
+
 ### Incremental Saving & Resumability (Checkpointing):
 
 When scraping massive repositories (like Kubernetes), hitting GitHub's API rate limits or network timeouts is common. You no longer have to worry about losing your progress!
 * **JSONL Format:** Issues are now saved line-by-line instantly as they are fetched, ensuring zero data loss.
-* **Auto-Resume:** The tool creates a hidden `.checkpoint` file tracking your progress. If the script crashes or you stop it, simply run the **exact same command** again. It will automatically resume from the exact page it left off, saving your API budget and time. The checkpoint stores a signature of the options that affect results (labels, depth, filters, cache mode, output file). If you re-run with different options after a crash, gh-issue-lens detects the mismatch, discards the old checkpoint and starts clean; no silently mixed result sets.
+* **Auto-Resume:** The tool creates a hidden `.checkpoint` file tracking your progress. If the script crashes or you stop it, simply run the **exact same command** again. It will automatically resume from the exact page it left off, saving your API budget and time. The checkpoint stores a signature of the options that affect results (labels, depth, filters, cache mode, output file). If you re-run with different options after a crash, gh-issue-lens detects the mismatch, discards the old checkpoint and starts clean; no silently mixed result sets. Resume also keeps writing to the same auto-generated file, so a single interrupted run never ends up split across two files.
 
 ### Exclude issues with open PRs:
 

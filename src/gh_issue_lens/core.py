@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import sys
+import re
 from datetime import datetime, timezone
 
 import requests
@@ -209,6 +210,50 @@ def cache_issues(conn, repo_full_name, issues):
     )
 
     conn.commit()
+
+
+def read_checkpoint(checkpoint_file):
+    """Load a checkpoint file. Returns a dict, or None if missing/unreadable."""
+    if not os.path.exists(checkpoint_file):
+        return None
+    try:
+        with open(checkpoint_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def slugify(text, max_length=24):
+    """Turn arbitrary text (e.g. a label) into a short filesystem-safe token."""
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug[:max_length].rstrip("-")
+
+
+def build_output_filename(repo, labels, depth, exclude_open_prs, signature, now=None):
+    """
+    Build a self-describing output filename so different commands against
+    the same repository never overwrite each other's exports.
+
+    Layout:
+        {repo}_{label-slugs}_d{depth}[_no-open-prs]_{signature}_{timestamp}.jsonl
+
+    Example:
+        kubernetes_good-first-issue_help-wanted_d50_3f9a2b1c4d5e_20261028T143022Z.jsonl
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    parts = [slugify(repo) or "repo"]
+    for label in labels or []:
+        slug = slugify(label)
+        if slug:
+            parts.append(slug)
+    parts.append(f"d{depth}")
+    if exclude_open_prs:
+        parts.append("no-open-prs")
+    parts.append(signature)
+    parts.append(now.strftime("%Y%m%dT%H%M%SZ"))
+    return "_".join(parts) + ".jsonl"
 
 
 def command_signature(signature_inputs):
@@ -478,6 +523,7 @@ def fetch_issues(
                             "page_num": page_num,
                             "extracted_count": extracted_count,
                             "signature": signature,
+                            "output_filename": output_filename,
                         },
                         f,
                     )
