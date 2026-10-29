@@ -4,9 +4,10 @@ Talks to any OpenAI-compatible /chat/completions endpoint using only
 `requests` (no SDK dependency). Works with OpenAI, OpenRouter, LM Studio,
 vLLM and Ollama.
 """
+
 import json
-import re
 import os
+import re
 import time
 
 import requests
@@ -32,6 +33,7 @@ INPUT_COMMENT_CAP = 20000
 MAX_RETRIES = 2
 RETRY_BACKOFF_SECONDS = 5
 
+
 def load_dotenv(path=".env"):
     """Minimal .env loader (no new dependency). Real env vars take precedence."""
     if not os.path.exists(path):
@@ -51,15 +53,19 @@ def load_dotenv(path=".env"):
 class LLMError(Exception):
     """Raised when the LLM endpoint cannot produce a summary."""
 
+
 def extract_json(text):
     """Extract a JSON object from LLM text output, stripping markdown blocks."""
     text = text.strip()
-    if text.startswith("```json"): text = text[7:]
-    if text.startswith("```"): text = text[3:]
-    if text.endswith("```"): text = text[:-3]
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
     text = text.strip()
-    
-    match = re.search(r'\{.*\}', text, re.DOTALL)
+
+    match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(0))
@@ -146,7 +152,7 @@ class LLMClient:
 
     def score_difficulty(self, title, body, labels):
         """Return a difficulty score (1-5) and reason for a single issue."""
-        body_capped = (body or "")[:4000] # Cap to avoid token limits
+        body_capped = (body or "")[:4000]  # Cap to avoid token limits
         prompt = (
             f"Issue Title: {title}\n"
             f"Labels: {', '.join(labels) if labels else 'None'}\n"
@@ -161,12 +167,15 @@ class LLMClient:
             "You MUST respond with ONLY a valid JSON object in this exact format, with no markdown formatting or extra text:\n"
             '{"score": <integer 1-5>, "reason": "<short explanation max 20 words>"}'
         )
-        
+
         payload = {
             "model": self.model,
             "temperature": 0.1,
             "messages": [
-                {"role": "system", "content": "You are an expert open source maintainer. You output ONLY valid JSON."},
+                {
+                    "role": "system",
+                    "content": "You are an expert open source maintainer. You output ONLY valid JSON.",
+                },
                 {"role": "user", "content": prompt},
             ],
         }

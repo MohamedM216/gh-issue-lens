@@ -136,14 +136,17 @@ def compute_score(stats):
     funnel = (stats.get("good_first_issues") or 0) + (stats.get("help_wanted_issues") or 0)
     difficulty_analyzed = stats.get("difficulty_analyzed")
     median_diff = stats.get("median_difficulty")
-    
+
     if difficulty_analyzed:
         # 10 points for quantity, 10 for quality
         score += min(10, funnel // 10)
         if median_diff is not None:
-            if median_diff <= 1.5: score += 10
-            elif median_diff <= 2.5: score += 7
-            elif median_diff <= 3.5: score += 3
+            if median_diff <= 1.5:
+                score += 10
+            elif median_diff <= 2.5:
+                score += 7
+            elif median_diff <= 3.5:
+                score += 3
             # else 0 points for hard issues
     else:
         # 20 points for quantity only
@@ -200,7 +203,9 @@ def verdict_for_score(score):
     return ("🧊", "COLD", "Hard to get help")
 
 
-def fetch_repo_stats(repo_full_name, token, stale_days=180, analyze_difficulty=False, llm_client=None, now=None):
+def fetch_repo_stats(
+    repo_full_name, token, stale_days=180, analyze_difficulty=False, llm_client=None, now=None
+):
     """Fetch community-health stats for one repository (2 API calls)."""
     owner, repo = repo_full_name.split("/", 1)
 
@@ -272,7 +277,7 @@ def fetch_repo_stats(repo_full_name, token, stale_days=180, analyze_difficulty=F
             issue_labels = {l["name"].lower() for l in (issue.get("labels", {}).get("nodes") or [])}
             if issue_labels & target_labels:
                 beginner_issues.append(issue)
-        
+
         difficulty_sample_size = len(beginner_issues[:10])
         scores = []
         print(f"    -> Analyzing difficulty for {difficulty_sample_size} beginner issues...")
@@ -286,8 +291,8 @@ def fetch_repo_stats(repo_full_name, token, stale_days=180, analyze_difficulty=F
                     scores.append(float(result["score"]))
             except Exception as e:
                 print(f"    Warning: LLM difficulty scoring failed: {e}")
-            time.sleep(0.5) # Rate limit protection
-            
+            time.sleep(0.5)  # Rate limit protection
+
         if scores:
             median_difficulty = round(statistics.median(scores), 1)
 
@@ -370,7 +375,11 @@ def render_table(stats_list):
             continue
 
         _, short, _ = verdict_for_score(stats["beginner_score"])
-        diff_str = f"{stats['median_difficulty']:.1f}" if stats.get("median_difficulty") is not None else "-"
+        diff_str = (
+            f"{stats['median_difficulty']:.1f}"
+            if stats.get("median_difficulty") is not None
+            else "-"
+        )
         lines.append(
             f"{stats['repo']:<30}"
             f"{stats['beginner_score']:>6}"
@@ -480,10 +489,14 @@ def plain_english_lines(stats, stale_days):
         median_diff = stats.get("median_difficulty")
         sample = stats.get("difficulty_sample_size", 0)
         if median_diff is not None:
-            if median_diff <= 1.5: diff_text = "genuinely easy"
-            elif median_diff <= 2.5: diff_text = "moderate"
-            elif median_diff <= 3.5: diff_text = "harder than they look"
-            else: diff_text = "very complex (trap!)"
+            if median_diff <= 1.5:
+                diff_text = "genuinely easy"
+            elif median_diff <= 2.5:
+                diff_text = "moderate"
+            elif median_diff <= 3.5:
+                diff_text = "harder than they look"
+            else:
+                diff_text = "very complex (trap!)"
             lines.append(
                 f"We analyzed <b>{sample}</b> beginner issues and their actual median difficulty is <b>{median_diff:.1f}/5</b> — they are {diff_text}."
             )
@@ -641,6 +654,7 @@ def stats_main(argv):
     llm_client = None
     if args.analyze_difficulty:
         from .llm import LLMClient
+
         llm_client = LLMClient()
         print(f"Difficulty analysis enabled: {llm_client.describe()}")
 
@@ -660,7 +674,15 @@ def stats_main(argv):
 
     for index, repo_name in enumerate(repos, 1):
         print(f" -> [{index}/{len(repos)}] Fetching stats for {repo_name}...")
-        results.append(fetch_repo_stats(repo_name, token, stale_days=args.stale_days, analyze_difficulty=args.analyze_difficulty, llm_client=llm_client))
+        results.append(
+            fetch_repo_stats(
+                repo_name,
+                token,
+                stale_days=args.stale_days,
+                analyze_difficulty=args.analyze_difficulty,
+                llm_client=llm_client,
+            )
+        )
 
     if args.json_out == "-":
         print(stats_to_json(results, args.stale_days))

@@ -3,11 +3,13 @@
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
-import re
 from datetime import datetime, timezone
+
 import requests
+
 from .llm import LLMError
 
 DEFAULT_CACHE_DB = ".gh_issue_lens_cache.db"
@@ -495,11 +497,15 @@ def fetch_issues(
                             total_comment_count=issue.get("comments", {}).get("totalCount"),
                         )
                     except LLMError as exc:
-                        print(f"\nError: LLM summarization failed on issue #{issue.get('number')}: {exc}")
-                        print("Progress saved to checkpoint. Fix the LLM setup and re-run the same command to resume.")
+                        print(
+                            f"\nError: LLM summarization failed on issue #{issue.get('number')}: {exc}"
+                        )
+                        print(
+                            "Progress saved to checkpoint. Fix the LLM setup and re-run the same command to resume."
+                        )
                         sys.exit(1)
-                    record["comments_count"] = (
-                        issue.get("comments", {}).get("totalCount") or len(comments)
+                    record["comments_count"] = issue.get("comments", {}).get("totalCount") or len(
+                        comments
                     )
                     record["comments_summarized"] = True
                 else:

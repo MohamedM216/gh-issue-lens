@@ -5,8 +5,14 @@ import os
 import sys
 
 from . import __version__
-from .core import DEFAULT_CACHE_DB, command_signature, fetch_issues, read_checkpoint, build_output_filename
-from .llm import load_dotenv, LLMClient
+from .core import (
+    DEFAULT_CACHE_DB,
+    build_output_filename,
+    command_signature,
+    fetch_issues,
+    read_checkpoint,
+)
+from .llm import LLMClient, load_dotenv
 
 
 def main(argv=None):
