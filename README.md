@@ -49,11 +49,7 @@ pip3 install requests
 
 **Export your GitHub Personal Access Token:**
 
-First of all, create your personal github token from your github account then use it.
-
-```bash
-export GITHUB_TOKEN="your_personal_access_token"
-```
+First of all, create your personal github token from your github account then use it, see [how to setup your .env file](#setup-your-env-file).
 
 **Verify it works:**
 
@@ -167,6 +163,60 @@ rm .gh_issue_lens_cache.db
 
 Caching is different from checkpointing: checkpointing helps resume a crashed or interrupted run, while caching helps avoid exporting the same issues again across separate runs.
 
+### LLM comment summarization (smaller exports for LLM analysis):
+Comment threads are usually the biggest part of an export and the main cause of LLM context-window bloat. With `--summarize-comments`, gh-issue-lens runs each issue's comment thread through an LLM and exports a compact summary instead of the raw comments. Nothing is character-cut: the LLM condenses the discussion so the context survives while the file stays small.
+
+```bash
+gh-issue-lens kubernetes kubernetes -d 50 --summarize-comments
+```
+
+Summarized issues carry `comments_summary`, `comments_count` and `comments_summarized: true` instead of the raw `comments` array.
+
+The summarizer is embedded in the package (plain HTTP, no SDK) and talks to any OpenAI-compatible endpoint:
+
+- `GH_ISSUE_LENS_LLM_BASE_URL` — default `https://api.openai.com/v1`
+- `GH_ISSUE_LENS_LLM_API_KEY` — not needed for local servers
+- `GH_ISSUE_LENS_LLM_MODEL` — default `gpt-4o-mini`
+
+Free and private with a local model (Ollama):
+
+```
+GH_ISSUE_LENS_LLM_BASE_URL="http://127.0.0.1:11434/v1"
+GH_ISSUE_LENS_LLM_MODEL="llama3.2"
+gh-issue-lens kubernetes kubernetes -d 50 --summarize-comments
+```
+
+If the LLM call keeps failing, the run stops cleanly and the checkpoint is saved, so an export file never mixes raw and summarized issues.
+
+#### Setup your .env file
+
+`gh-issue-lens` relies on external APIs (GitHub and LLMs) which require authentication. To keep your secrets safe and out of your terminal history, the tool automatically loads a local `.env` file.
+
+In the root of your project (or the directory where you run the tool), create a file named `.env`:
+```bash
+touch .env
+```
+
+Open .env and add your credentials. Here is the complete template:
+```
+# --- GitHub Authentication (Required for ALL commands) ---
+GITHUB_TOKEN=ghp_your_github_personal_access_token_here
+
+# --- LLM Configuration (Required ONLY if using --summarize-comments) ---
+
+# Provider options: nvidia, openai, ollama
+GH_ISSUE_LENS_LLM_PROVIDER=nvidia
+
+# Your API key for the chosen provider (Not needed for local Ollama)
+GH_ISSUE_LENS_LLM_API_KEY=nvapi_your_nvidia_api_key_here
+
+# Optional: Override the default model
+# GH_ISSUE_LENS_LLM_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
+
+# Optional: Override the base URL (useful for custom endpoints)
+# GH_ISSUE_LENS_LLM_BASE_URL=https://integrate.api.nvidia.com/v1
+```
+
 ## Compare repositories: which community should you start with?
 
 `gh-issue-lens stats` answers the question every beginner asks first:
@@ -195,7 +245,7 @@ Three output layers:
 
 ## What's next?
 
-The generated JSON file is suitable to be used as context for Large Language Models (like Gemini, Claude, or ChatGPT). You can upload the output file to an LLM and use targeted prompts to find the perfect issue to work on.
+The generated JSON file is suitable to be used as context for Large Language Models (like Gemini, Claude, or ChatGPT). Use `--summarize-comments` for an even more compact file. You can upload the output file to an LLM and use targeted prompts to find the perfect issue to work on.
 
 **Example Prompts to try:**
 

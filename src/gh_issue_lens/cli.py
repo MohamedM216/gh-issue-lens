@@ -6,9 +6,12 @@ import sys
 
 from . import __version__
 from .core import DEFAULT_CACHE_DB, command_signature, fetch_issues, read_checkpoint, build_output_filename
+from .llm import load_dotenv, LLMClient
 
 
 def main(argv=None):
+    load_dotenv()
+
     if argv is None:
         argv = sys.argv[1:]
 
@@ -105,6 +108,16 @@ def scan_main(argv):
         ),
     )
 
+    parser.add_argument(
+        "--summarize-comments",
+        action="store_true",
+        help=(
+            "Summarize each issue's comment thread with an LLM and export the summary "
+            "instead of raw comments (much smaller files for LLM analysis). Configure "
+            "via GH_ISSUE_LENS_LLM_BASE_URL, GH_ISSUE_LENS_LLM_API_KEY, GH_ISSUE_LENS_LLM_MODEL."
+        ),
+    )
+
     args = parser.parse_args(argv)
 
     if len(args.labels) > 5:
@@ -118,6 +131,11 @@ def scan_main(argv):
         print("Please run: export GITHUB_TOKEN='your_personal_access_token'")
         sys.exit(1)
 
+    llm_client = None
+    if args.summarize_comments:
+        llm_client = LLMClient()
+        print(f"Comment summarization enabled: {llm_client.describe()}")
+
     checkpoint_file = f".checkpoint_{args.owner}_{args.repo}.json"
 
     signature_inputs = {
@@ -129,6 +147,7 @@ def scan_main(argv):
         "stale_pr_days": args.stale_pr_days,
         "cache": args.cache,
         "cache_stop": args.cache_stop,
+        "summarize_comments": args.summarize_comments,
     }
     # An explicit -o name is part of the run identity; an auto-generated
     # name must NOT be, otherwise every resume would look like a new command.
@@ -183,6 +202,8 @@ def scan_main(argv):
             cache_stop=args.cache_stop,
             stale_pr_days=args.stale_pr_days,
             signature=signature,
+            summarize_comments=args.summarize_comments,
+            llm_client=llm_client,
         )
 
         print(f"\nDone! Scraped {total_fetched} issues in this run.")

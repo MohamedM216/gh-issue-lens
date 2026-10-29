@@ -7,8 +7,8 @@ import sqlite3
 import sys
 import re
 from datetime import datetime, timezone
-
 import requests
+from .llm import LLMError
 
 DEFAULT_CACHE_DB = ".gh_issue_lens_cache.db"
 
@@ -53,6 +53,7 @@ query($owner: String!, $repo: String!, $cursor: String) {
           }
         }
         comments(first: 20) {
+          totalCount
           nodes {
             author {
               login
@@ -280,6 +281,8 @@ def fetch_issues(
     cache_stop=False,
     stale_pr_days=90,
     signature="",
+    summarize_comments=False,
+    llm_client=None,
 ):
     """
     Fetch issues from GitHub and append them to a JSONL file.
@@ -468,24 +471,40 @@ def fetch_issues(
                     cached_skipped += 1
                     continue
 
-                page_issues.append(
-                    {
-                        "number": issue.get("number"),
-                        "title": issue.get("title"),
-                        "url": issue.get("url"),
-                        "created_at": issue.get("createdAt"),
-                        "is_assigned": len(assignees) > 0,
-                        "assigned_to": assignees,
-                        "has_open_pr_against_it": has_open_pr,
-                        "has_fresh_open_pr": has_fresh_open_pr,
-                        "has_stale_open_pr": has_stale_open_pr,
-                        "availability": availability,
-                        "linked_prs": linked_prs,
-                        "labels": issue_labels,
-                        "body": issue.get("body"),
-                        "comments": comments,
-                    }
-                )
+                record = {
+                    "number": issue.get("number"),
+                    "title": issue.get("title"),
+                    "url": issue.get("url"),
+                    "created_at": issue.get("createdAt"),
+                    "is_assigned": len(assignees) > 0,
+                    "assigned_to": assignees,
+                    "has_open_pr_against_it": has_open_pr,
+                    "has_fresh_open_pr": has_fresh_open_pr,
+                    "has_stale_open_pr": has_stale_open_pr,
+                    "availability": availability,
+                    "linked_prs": linked_prs,
+                    "labels": issue_labels,
+                    "body": issue.get("body"),
+                }
+                if summarize_comments and llm_client is not None:
+                    try:
+                        record["comments_summary"] = llm_client.summarize_comments(
+                            issue.get("number"),
+                            issue.get("title"),
+                            comments,
+                            total_comment_count=issue.get("comments", {}).get("totalCount"),
+                        )
+                    except LLMError as exc:
+                        print(f"\nError: LLM summarization failed on issue #{issue.get('number')}: {exc}")
+                        print("Progress saved to checkpoint. Fix the LLM setup and re-run the same command to resume.")
+                        sys.exit(1)
+                    record["comments_count"] = (
+                        issue.get("comments", {}).get("totalCount") or len(comments)
+                    )
+                    record["comments_summarized"] = True
+                else:
+                    record["comments"] = comments
+                page_issues.append(record)
 
                 if extracted_count + len(page_issues) >= depth:
                     break
