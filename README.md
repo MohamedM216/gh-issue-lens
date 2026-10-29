@@ -221,12 +221,19 @@ GH_ISSUE_LENS_LLM_API_KEY=nvapi_your_nvidia_api_key_here
 
 `gh-issue-lens stats` answers the question every beginner asks first:
 *which repo should I even try?*
+```bash
+gh-issue-lens stats kubernetes/kubernetes pandas-dev/pandas
+```
 
-    gh-issue-lens stats kubernetes/kubernetes pandas-dev/pandas
+Analyze difficulty using the embedded LLM
+```bash
+gh-issue-lens stats kubernetes/kubernetes pandas-dev/pandas --analyze-difficulty
+```
 
 Or from a file (one `owner/repo` per line, `#` comments allowed):
-
-    gh-issue-lens stats --repos-file repos.txt
+```bash    
+gh-issue-lens stats --repos-file repos.txt
+```
 
 Three output layers:
 
@@ -237,7 +244,9 @@ Three output layers:
 ### What the numbers mean
 
 - **VERDICT (decide in 2 seconds):** 🌱 GREAT (≥75) · 👍 GOOD (≥55) · ⚠️ MIXED (≥35) · 🧊 COLD (<35).
-- **beginner score (0-100):** responsiveness (30) + beginner-issue funnel (20) + answered-issue share (15) + freshness (15) + merged-PR pace per week (12) + push recency (8).
+- **beginner score (0-100)**: responsiveness (30) + beginner-issue funnel (20) + answered-issue share (15) + freshness (15) + merged-PR pace per week (12) + push recency (8).
+  - *Note: If `--analyze-difficulty` is used, the 20 funnel points are split into 10 points for quantity and 10 points for LLM-verified quality.*
+- **DIFF**: median LLM-scored difficulty (1-5) of the 10 most recent beginner issues. Only shown when `--analyze-difficulty` is passed.
 - **REPLY:** median time until the first non-bot, non-author comment on the 100 most recent open issues.
 - **UNANSW / STALE:** share of those 100 issues with no human reply / untouched for `--stale-days` (default 180).
 - **PR/WK:** pull requests merged in the last 7 days (the monthly count is in the JSON and HTML report).

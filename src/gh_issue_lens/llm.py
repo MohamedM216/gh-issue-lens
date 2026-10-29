@@ -4,6 +4,8 @@ Talks to any OpenAI-compatible /chat/completions endpoint using only
 `requests` (no SDK dependency). Works with OpenAI, OpenRouter, LM Studio,
 vLLM and Ollama.
 """
+import json
+import re
 import os
 import time
 
@@ -48,6 +50,22 @@ def load_dotenv(path=".env"):
 
 class LLMError(Exception):
     """Raised when the LLM endpoint cannot produce a summary."""
+
+def extract_json(text):
+    """Extract a JSON object from LLM text output, stripping markdown blocks."""
+    text = text.strip()
+    if text.startswith("```json"): text = text[7:]
+    if text.startswith("```"): text = text[3:]
+    if text.endswith("```"): text = text[:-3]
+    text = text.strip()
+    
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+    return None
 
 
 class LLMClient:
@@ -119,6 +137,67 @@ class LLMClient:
                 else:
                     last_error = f"HTTP {response.status_code}: {response.text[:300]}"
                     # Only retry on transient failures.
+                    if response.status_code not in (408, 429, 500, 502, 503, 504):
+                        break
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+
+        raise LLMError(last_error or "unknown error")
+
+    def score_difficulty(self, title, body, labels):
+        """Return a difficulty score (1-5) and reason for a single issue."""
+        body_capped = (body or "")[:4000] # Cap to avoid token limits
+        prompt = (
+            f"Issue Title: {title}\n"
+            f"Labels: {', '.join(labels) if labels else 'None'}\n"
+            f"Issue Body:\n{body_capped}\n\n"
+            "Act as a senior open source maintainer evaluating this issue for a beginner. "
+            "Rate the difficulty of this issue on a scale of 1 to 5, where:\n"
+            "1 = Trivial (typos, simple docs, config tweaks)\n"
+            "2 = Easy (small bug fixes, adding simple tests, minor refactors)\n"
+            "3 = Moderate (requires understanding of specific modules, standard features)\n"
+            "4 = Hard (complex logic, architectural changes, deep domain knowledge)\n"
+            "5 = Expert (core rewrites, complex debugging, cross-system impacts)\n\n"
+            "You MUST respond with ONLY a valid JSON object in this exact format, with no markdown formatting or extra text:\n"
+            '{"score": <integer 1-5>, "reason": "<short explanation max 20 words>"}'
+        )
+        
+        payload = {
+            "model": self.model,
+            "temperature": 0.1,
+            "messages": [
+                {"role": "system", "content": "You are an expert open source maintainer. You output ONLY valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        last_error = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=self.timeout,
+                )
+            except requests.exceptions.RequestException as exc:
+                last_error = f"network error: {exc}"
+            else:
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        text = data["choices"][0]["message"]["content"].strip()
+                        parsed = extract_json(text)
+                        if parsed and "score" in parsed:
+                            return parsed
+                        last_error = "failed to parse JSON or missing 'score' key"
+                    except (ValueError, KeyError, IndexError) as exc:
+                        last_error = f"unexpected response shape: {exc}"
+                else:
+                    last_error = f"HTTP {response.status_code}: {response.text[:300]}"
                     if response.status_code not in (408, 429, 500, 502, 503, 504):
                         break
             if attempt < MAX_RETRIES:

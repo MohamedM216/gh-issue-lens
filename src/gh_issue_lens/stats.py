@@ -6,6 +6,7 @@ import json
 import os
 import statistics
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -17,31 +18,34 @@ API_GRAPHQL = "https://api.github.com/graphql"
 
 STATS_QUERY = """
 query(
-  $owner: String!,
-  $repo: String!,
-  $mergedWeekQuery: String!,
-  $mergedMonthQuery: String!
+    $owner: String!,
+    $repo: String!,
+    $mergedWeekQuery: String!,
+    $mergedMonthQuery: String!
 ) {
-  repository(owner: $owner, name: $repo) {
-    openIssues: issues(states: OPEN, first: 1) { totalCount }
-    goodFirstIssues: issues(states: OPEN, labels: ["good first issue"], first: 1) { totalCount }
-    helpWantedIssues: issues(states: OPEN, labels: ["help wanted"], first: 1) { totalCount }
-    recentIssues: issues(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes {
-        createdAt
-        updatedAt
-        author { login }
-        comments(first: 5) {
-          nodes {
-            createdAt
-            author { login __typename }
-          }
+    repository(owner: $owner, name: $repo) {
+        openIssues: issues(states: OPEN, first: 1) { totalCount }
+        goodFirstIssues: issues(states: OPEN, labels: ["good first issue"], first: 1) { totalCount }
+        helpWantedIssues: issues(states: OPEN, labels: ["help wanted"], first: 1) { totalCount }
+        recentIssues: issues(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes {
+                title
+                body
+                labels(first: 10) { nodes { name } }
+                createdAt
+                updatedAt
+                author { login }
+                comments(first: 10) {
+                    nodes {
+                        createdAt
+                        author { login __typename }
+                    }
+                }
+            }
         }
-      }
     }
-  }
-  mergedWeek: search(type: ISSUE, query: $mergedWeekQuery, first: 1) { issueCount }
-  mergedMonth: search(type: ISSUE, query: $mergedMonthQuery, first: 1) { issueCount }
+    mergedWeek: search(type: ISSUE, query: $mergedWeekQuery, first: 1) { issueCount }
+    mergedMonth: search(type: ISSUE, query: $mergedMonthQuery, first: 1) { issueCount }
 }
 """
 
@@ -130,7 +134,20 @@ def compute_score(stats):
             score += 5
 
     funnel = (stats.get("good_first_issues") or 0) + (stats.get("help_wanted_issues") or 0)
-    score += min(20, funnel // 5)
+    difficulty_analyzed = stats.get("difficulty_analyzed")
+    median_diff = stats.get("median_difficulty")
+    
+    if difficulty_analyzed:
+        # 10 points for quantity, 10 for quality
+        score += min(10, funnel // 10)
+        if median_diff is not None:
+            if median_diff <= 1.5: score += 10
+            elif median_diff <= 2.5: score += 7
+            elif median_diff <= 3.5: score += 3
+            # else 0 points for hard issues
+    else:
+        # 20 points for quantity only
+        score += min(20, funnel // 5)
 
     unanswered = stats.get("unanswered_rate")
 
@@ -183,7 +200,7 @@ def verdict_for_score(score):
     return ("🧊", "COLD", "Hard to get help")
 
 
-def fetch_repo_stats(repo_full_name, token, stale_days=180, now=None):
+def fetch_repo_stats(repo_full_name, token, stale_days=180, analyze_difficulty=False, llm_client=None, now=None):
     """Fetch community-health stats for one repository (2 API calls)."""
     owner, repo = repo_full_name.split("/", 1)
 
@@ -243,6 +260,37 @@ def fetch_repo_stats(repo_full_name, token, stale_days=180, now=None):
     unanswered = 0
     stale = 0
 
+    median_difficulty = None
+    difficulty_sample_size = 0
+    difficulty_analyzed = False
+
+    if analyze_difficulty and llm_client is not None:
+        difficulty_analyzed = True
+        beginner_issues = []
+        target_labels = {"good first issue", "help wanted"}
+        for issue in recent:
+            issue_labels = {l["name"].lower() for l in (issue.get("labels", {}).get("nodes") or [])}
+            if issue_labels & target_labels:
+                beginner_issues.append(issue)
+        
+        difficulty_sample_size = len(beginner_issues[:10])
+        scores = []
+        print(f"    -> Analyzing difficulty for {difficulty_sample_size} beginner issues...")
+        for issue in beginner_issues[:10]:
+            title = issue.get("title", "")
+            body = issue.get("body", "") or ""
+            labels = [l["name"] for l in (issue.get("labels", {}).get("nodes") or [])]
+            try:
+                result = llm_client.score_difficulty(title, body, labels)
+                if result and "score" in result:
+                    scores.append(float(result["score"]))
+            except Exception as e:
+                print(f"    Warning: LLM difficulty scoring failed: {e}")
+            time.sleep(0.5) # Rate limit protection
+            
+        if scores:
+            median_difficulty = round(statistics.median(scores), 1)
+
     for issue in recent:
         updated = parse_iso_datetime(issue.get("updatedAt"))
 
@@ -300,6 +348,9 @@ def fetch_repo_stats(repo_full_name, token, stale_days=180, now=None):
         "stale_rate": round(stale / sample, 2) if sample else None,
     }
 
+    stats["difficulty_analyzed"] = difficulty_analyzed
+    stats["median_difficulty"] = median_difficulty
+    stats["difficulty_sample_size"] = difficulty_sample_size
     stats["beginner_score"] = compute_score(stats)
 
     return stats
@@ -308,7 +359,7 @@ def fetch_repo_stats(repo_full_name, token, stale_days=180, now=None):
 def render_table(stats_list):
     header = (
         f"{'REPO':<30}{'SCORE':>6}{'VERDICT':>9}{'OPEN':>7}{'GFI':>6}{'HW':>6}"
-        f"{'REPLY':>8}{'UNANSW':>8}{'STALE':>7}{'PR/WK':>7}"
+        f"{'DIFF':>6}{'REPLY':>8}{'UNANSW':>8}{'STALE':>7}{'PR/WK':>7}"
     )
 
     lines = [header, "-" * len(header)]
@@ -319,7 +370,7 @@ def render_table(stats_list):
             continue
 
         _, short, _ = verdict_for_score(stats["beginner_score"])
-
+        diff_str = f"{stats['median_difficulty']:.1f}" if stats.get("median_difficulty") is not None else "-"
         lines.append(
             f"{stats['repo']:<30}"
             f"{stats['beginner_score']:>6}"
@@ -424,6 +475,20 @@ def plain_english_lines(stats, stale_days):
         f"<b>{fmt_rate(stats.get('unanswered_rate'))}</b> of the last {stats.get('sample_size')} issues "
         f"got no answer, and <b>{fmt_rate(stats.get('stale_rate'))}</b> are untouched for {stale_days}+ days."
     )
+
+    if stats.get("difficulty_analyzed"):
+        median_diff = stats.get("median_difficulty")
+        sample = stats.get("difficulty_sample_size", 0)
+        if median_diff is not None:
+            if median_diff <= 1.5: diff_text = "genuinely easy"
+            elif median_diff <= 2.5: diff_text = "moderate"
+            elif median_diff <= 3.5: diff_text = "harder than they look"
+            else: diff_text = "very complex (trap!)"
+            lines.append(
+                f"We analyzed <b>{sample}</b> beginner issues and their actual median difficulty is <b>{median_diff:.1f}/5</b> — they are {diff_text}."
+            )
+        else:
+            lines.append("We tried to analyze beginner issue difficulty but the LLM failed.")
 
     return lines
 
@@ -558,6 +623,12 @@ def stats_main(argv):
         help="Issues untouched for this many days count as stale (default: 180)",
     )
 
+    parser.add_argument(
+        "--analyze-difficulty",
+        action="store_true",
+        help="Use the embedded LLM to score the difficulty of beginner issues (adds time/cost).",
+    )
+
     args = parser.parse_args(argv)
 
     token = os.getenv("GITHUB_TOKEN")
@@ -566,6 +637,12 @@ def stats_main(argv):
         print("Error: GITHUB_TOKEN environment variable not set.")
         print("Please run: export GITHUB_TOKEN='your_personal_access_token'")
         sys.exit(1)
+
+    llm_client = None
+    if args.analyze_difficulty:
+        from .llm import LLMClient
+        llm_client = LLMClient()
+        print(f"Difficulty analysis enabled: {llm_client.describe()}")
 
     try:
         repos = load_repos(args.repos, args.repos_file)
@@ -583,7 +660,7 @@ def stats_main(argv):
 
     for index, repo_name in enumerate(repos, 1):
         print(f" -> [{index}/{len(repos)}] Fetching stats for {repo_name}...")
-        results.append(fetch_repo_stats(repo_name, token, stale_days=args.stale_days))
+        results.append(fetch_repo_stats(repo_name, token, stale_days=args.stale_days, analyze_difficulty=args.analyze_difficulty, llm_client=llm_client))
 
     if args.json_out == "-":
         print(stats_to_json(results, args.stale_days))
